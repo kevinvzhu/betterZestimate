@@ -1,63 +1,64 @@
-import pandas as pd
-from stable_baselines3 import DDPG
-from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise
-from src.env.real_estate_env import RealEstateEnv
-from src.preprocessing.pre_processing import preprocess_data
-import os
-import numpy as np
+from stable_baselines3 import PPO
+from env_setup import RealEstatePortfolioEnv
 
-# Load and preprocess data
-file_path = "data/cs238_modified_data.json"
-data, scaler, encoder, price_min, price_max = preprocess_data(file_path)
+if __name__ == "__main__":
+    property_data_path = "/Users/KZJer/Documents/GitHub/betterZestimate/data/processed_data.csv"
+    market_data_path = "/Users/KZJer/Documents/GitHub/betterZestimate/data/market_data.csv"
 
-# Initialize the environment
-env = RealEstateEnv(data, price_min, price_max)
+    env = RealEstatePortfolioEnv(
+        property_data_path=property_data_path,
+        market_data_path=market_data_path,
+        initial_cash=100_000_000,
+        num_properties=5
+    )
 
-# Add action noise for exploration
-action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(1), sigma=0.1)
+    model = PPO("MlpPolicy", env,
+                verbose=1,
+                n_steps=4096,
+                batch_size=256,
+                gamma=0.95,
+                learning_rate=1e-4)
+    model.learn(total_timesteps=300000)  # More training steps since we have more data
+    model.save("re_portfolio_ppo_new")
 
-# Train the DDPG agent directly on the single environment
-model = DDPG("MlpPolicy", env, verbose=1, action_noise=action_noise,
-    learning_rate=1e-3,
-    buffer_size=50000,
-    learning_starts=1000,
-    batch_size=64,
-    gamma=0.99,
-    tau=0.005)
-
-# Define the path for the log file
-log_file_path = '/Users/KZJer/Documents/GitHub/betterZestimate/src/log_file.txt'
-
-# Open the file in write mode
-with open(log_file_path, 'w') as log_file:
-    obs, info = env.reset()  # Correctly get the initial observation
-    for step in range(1000):
-        # Predict the action
-        action, _states = model.predict(obs, deterministic=True)
-        
-        # Take the action in the environment
+    # Evaluate final performance
+    obs, info = env.reset()
+    done = False
+    step_idx = 0
+    while not done:
+        action, _ = model.predict(obs, deterministic=True)
+        print(f"Step {step_idx}, Action chosen: {action}")
         obs, reward, done, truncated, info = env.step(action)
-        
-        # Log the action and reward
-        log_file.write(f"Step {step+1}: Action: {action}, Reward: {reward}\n")
-        
-        # Reset the environment if done
-        if done:
-            obs, info = env.reset()
+        print(f"Step {step_idx}, Portfolio value: {info['portfolio_value']}, Reward: {reward}, Owned: {env.owned_properties}")
+        step_idx += 1
 
-# Train the model
-model.learn(total_timesteps=10000)
+    print("Final portfolio value:", info["portfolio_value"])
 
-# Save the model
-model.save("real_estate_ddpg")
 
-# Test the model
-obs, info = env.reset()  # Unpack both observation and info
-print("Initial observation:", obs)
-print("Initial observation shape:", obs.shape)
-done = False
-while not done:
-    action, _ = model.predict(obs, deterministic=True)
-    print(f"Predicted action (price): {action}")  # Print the predicted action
-    obs, reward, done, truncated, info = env.step(action)
-    print(f"Action: {action}, Reward: {reward}")
+    # Do-nothing means always choose "hold" (action=0 for each property)
+    # obs, info = env.reset()
+    # done = False
+    # total_reward = 0
+    # while not done:
+    #     # Action: zero for every property (hold)
+    #     action = [0]*env.num_properties
+    #     obs, reward, done, truncated, info = env.step(action)
+    #     total_reward += reward
+
+    # print("Do-Nothing final portfolio value:", info["portfolio_value"])
+    # print("Do-Nothing total cumulative reward:", total_reward)
+
+    # Random Policy
+    # import random
+
+    # obs, info = env.reset()
+    # done = False
+    # total_reward = 0
+    # while not done:
+    #     # Randomly choose 0,1,2 for each property
+    #     action = [random.randint(0,2) for _ in range(env.num_properties)]
+    #     obs, reward, done, truncated, info = env.step(action)
+    #     total_reward += reward
+
+    # print("Random final portfolio value:", info["portfolio_value"])
+    # print("Random total cumulative reward:", total_reward)

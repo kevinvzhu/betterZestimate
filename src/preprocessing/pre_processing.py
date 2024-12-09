@@ -1,91 +1,85 @@
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.preprocessing import OneHotEncoder
+import os
 import json
+import pandas as pd
 import numpy as np
+from glob import glob
+from datetime import datetime
 
-def preprocess_data(file_path):
-    # Load data
-    with open(file_path, 'r') as file:
-        data = json.load(file)
+def load_property_data(property_dir):
+    """
+    Load and parse JSON files containing property data.
+    Extract key fields: zpid, datePostedString as 'date', address info,
+    price, bedrooms, bathrooms, livingArea, propertyType, city, state, zipcode.
+    """
+    all_files = glob(os.path.join(property_dir, "*.json"))
+    records = []
+    
+    for f in all_files:
+        with open(f, 'r') as infile:
+            data = json.load(infile)
+            # 'data' is a list of property objects
+            for prop in data:
+                zpid = prop.get('zpid')
+                # Date is stored in 'datePostedString'
+                date_str = prop.get('datePostedString')  # e.g. "2024-12-08"
+                date = None
+                if date_str:
+                    # Attempt to parse date; if fails, date stays None
+                    try:
+                        date = datetime.strptime(date_str, "%Y-%m-%d")
+                    except ValueError:
+                        # If parsing fails, you might log this or skip the record
+                        pass
 
-    # Convert JSON to DataFrame
-    df = pd.DataFrame(data)
+                address = prop.get('address', {})
+                city = address.get('city')
+                state = address.get('state')
+                zipcode = address.get('zipcode')
 
-    # Relevant columns
-    selected_features = [
-        'city', 'state', 'bedrooms', 'bathrooms', 'livingArea', 'yearBuilt',
-        'zipcode', 'homeType', 'propertyTaxRate', 'daysOnZillow',
-        'tourViewCount', 'taxAssessedValue', 'price', 'zestimate', 'country'
-    ]
+                # Price value is in price.value
+                price_info = prop.get('price', {})
+                price = price_info.get('value')
 
-    # Extract only relevant columns
-    df = df[selected_features]
+                bedrooms = prop.get('bedrooms')
+                bathrooms = prop.get('bathrooms')
+                livingArea = prop.get('livingArea')
+                propertyType = prop.get('propertyType')
 
-    # Replace missing prices with zestimate if available
-    df['price'] = df.apply(
-        lambda row: row['zestimate'] if pd.isna(row['price']) and not pd.isna(row['zestimate']) else row['price'],
-        axis=1
-    )
+                # Only append if we have a zpid and price, for example:
+                if zpid is not None and price is not None:
+                    records.append({
+                        'zpid': zpid,
+                        'date': date,
+                        'city': city,
+                        'state': state,
+                        'zipcode': zipcode,
+                        'price': price,
+                        'bedrooms': bedrooms,
+                        'bathrooms': bathrooms,
+                        'livingArea': livingArea,
+                        'propertyType': propertyType
+                    })
+    return pd.DataFrame(records)
 
-    # Remove rows where price is still missing
-    df = df.dropna(subset=['price'])
 
-    # Fill missing values
-    df = df.fillna({
-        'city': 'unknown',
-        'state': 'unknown',
-        'country': 'unknown',
-        'zipcode': 'unknown',
-        'homeType': 'unknown',
-        'propertyTaxRate': -1,
-        'bedrooms': -1,  # Replace missing bedrooms with -1
-        'bathrooms': -1,  # Replace missing bathrooms with -1
-        'livingArea': df['livingArea'].median(),  # Replace with median
-        'yearBuilt': df['yearBuilt'].median(),  # Replace with median
-        'daysOnZillow': -1,  # Replace with -1
-        'tourViewCount': -1,  # Replace with -1
-        'taxAssessedValue': df['taxAssessedValue'].median(),  # Replace with median
-    })
+if __name__ == "__main__":
+    property_dir = "data/property_data"  # Update if needed
+    df = load_property_data(property_dir)
 
-    # Fill missing categorical features with "unknown"
-    categorical_features = ['city', 'state', 'zipcode', 'homeType', 'country']
-    df[categorical_features] = df[categorical_features].fillna('unknown')
+    # Drop rows with missing critical values (price, zpid, etc.)
+    df = df.dropna(subset=['zpid', 'price'])
 
-    # One-hot encode categorical variables
-    encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    available_categorical_features = [col for col in categorical_features if col in df.columns]
-    encoded = encoder.fit_transform(df[available_categorical_features])
-    encoded_df = pd.DataFrame(encoded, columns=encoder.get_feature_names_out(available_categorical_features))
+    # If date is important and might be missing, consider dropping if missing:
+    # df = df.dropna(subset=['date'])
 
-    # Concatenate the one-hot encoded columns with the DataFrame
-    df = pd.concat([df.drop(columns=available_categorical_features), encoded_df], axis=1)
+    # Convert to a monthly period if desired:
+    # df['year_month'] = df['date'].dt.to_period('M')
 
-    # Normalize numeric features
-    numeric_features = ['bedrooms', 'bathrooms', 'livingArea', 'yearBuilt',
-                        'propertyTaxRate', 'daysOnZillow', 'tourViewCount', 'taxAssessedValue', 'price']
-    scaler = MinMaxScaler()
-    df[numeric_features] = scaler.fit_transform(df[numeric_features])
+    # Additional data cleaning / normalization can go here:
+    # For example, log-transform price:
+    # df['log_price'] = np.log1p(df['price'])
 
-    # Check for remaining NaNs and fill them with a default value
-    if df.isnull().values.any():
-        print("Data still contains NaN values after processing!")
-        print(df[df.isnull().any(axis=1)])
-        # Fill remaining NaNs with a default value, e.g., 0 for numeric and 'unknown' for categorical
-        df = df.fillna({
-            col: 0 if df[col].dtype in [np.float64, np.int64] else 'unknown'
-            for col in df.columns
-        })
-
-    # Remove rows with any NaN values
-    df = df.dropna()
-
-    # Set price_min and price_max for use in the environment
-    price_min = df['price'].min()
-    price_max = df['price'].max()
-
-    # Save processed data for debugging
-    df.to_csv('/Users/KZJer/Documents/GitHub/betterZestimate/src/preprocessing/processed_debug.csv', index=False)
-    print("Processed data saved to processed_debug.csv")
-
-    return df, scaler, encoder, price_min, price_max
+    # Save the cleaned data
+    output_path = 'data/processed_data.csv'
+    df.to_csv(output_path, index=False)
+    print(f"Data preprocessing done. '{output_path}' created.")
