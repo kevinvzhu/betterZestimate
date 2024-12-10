@@ -19,20 +19,20 @@ if __name__ == "__main__":
                 gamma=0.95,
                 learning_rate=1e-4)
     model.learn(total_timesteps=300000)  # More training steps since we have more data
-    model.save("re_portfolio_ppo_new")
+    model.save("re_portfolio_ppo_new_0.001_lr_long")
 
     # Evaluate final performance
-    obs, info = env.reset()
-    done = False
-    step_idx = 0
-    while not done:
-        action, _ = model.predict(obs, deterministic=True)
-        print(f"Step {step_idx}, Action chosen: {action}")
-        obs, reward, done, truncated, info = env.step(action)
-        print(f"Step {step_idx}, Portfolio value: {info['portfolio_value']}, Reward: {reward}, Owned: {env.owned_properties}")
-        step_idx += 1
+    # obs, info = env.reset()
+    # done = False
+    # step_idx = 0
+    # while not done:
+    #     action, _ = model.predict(obs, deterministic=True)
+    #     print(f"Step {step_idx}, Action chosen: {action}")
+    #     obs, reward, done, truncated, info = env.step(action)
+    #     print(f"Step {step_idx}, Portfolio value: {info['portfolio_value']}, Reward: {reward}, Owned: {env.owned_properties}")
+    #     step_idx += 1
 
-    print("Final portfolio value:", info["portfolio_value"])
+    # print("Final portfolio value:", info["portfolio_value"])
 
 
     # Do-nothing means always choose "hold" (action=0 for each property)
@@ -48,17 +48,17 @@ if __name__ == "__main__":
     # print("Do-Nothing final portfolio value:", info["portfolio_value"])
     # print("Do-Nothing total cumulative reward:", total_reward)
 
-    # Random Policy
-    # import random
+    #Random Policy
+    import random
 
-    # obs, info = env.reset()
-    # done = False
-    # total_reward = 0
-    # while not done:
-    #     # Randomly choose 0,1,2 for each property
-    #     action = [random.randint(0,2) for _ in range(env.num_properties)]
-    #     obs, reward, done, truncated, info = env.step(action)
-    #     total_reward += reward
+    obs, info = env.reset()
+    done = False
+    total_reward = 0
+    while not done:
+        # Randomly choose 0,1,2 for each property
+        action = [random.randint(0,2) for _ in range(env.num_properties)]
+        obs, reward, done, truncated, info = env.step(action)
+        total_reward += reward
 
-    # print("Random final portfolio value:", info["portfolio_value"])
-    # print("Random total cumulative reward:", total_reward)
+    print("Random final portfolio value:", info["portfolio_value"])
+    print("Random total cumulative reward:", total_reward)

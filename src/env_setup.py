@@ -46,6 +46,10 @@ class RealEstatePortfolioEnv(gym.Env):
         self.unemployment_mean = self.market_df['unemployment_rate'].mean()
         self.unemployment_std = self.market_df['unemployment_rate'].std()
 
+        # Initialize variables for tracking returns
+        self.returns = []  # List to store incremental profits
+        self.epsilon = 1e-8  # Small value to prevent division by zero
+
     def _encode_property_type(self, ptype):
         mapping = {'SINGLE_FAMILY': 1.0, 'APARTMENT': 2.0, 'MULTI_FAMILY': 3.0}
         return mapping.get(ptype, 0.0)
@@ -162,9 +166,26 @@ class RealEstatePortfolioEnv(gym.Env):
                     prop_price = self.last_known_prices.get(zpid, 0)
 
                 portfolio_value += prop_price * qty
-
-        reward = portfolio_value - self.prev_portfolio_value
-        self.prev_portfolio_value = portfolio_value
+                
+        # simple incremental reward 
+        reward = portfolio_value - self.prev_portfolio_value # incremental profit/loss
+        #---#
+        # proportional percentage reward
+        # reward = (portfolio_value - self.prev_portfolio_value) / self.prev_portfolio_value
+        #---#
+        # sharpe reward: track a running variance or standard deviation of returns
+        # Calculate incremental profit/loss
+        # incremental_profit = portfolio_value - self.prev_portfolio_value
+        # self.returns.append(incremental_profit)
+        # std_of_returns = np.std(self.returns)
+        # reward = incremental_profit / (std_of_returns + self.epsilon)
+        # self.prev_portfolio_value = portfolio_value
+        #---#
+        # sparsity penalty (transaction costs)
+        # cost_per_trade = 100000  # Define a cost per trade
+        # buy_sell_actions = np.array(action)  # Convert action to a numpy array
+        # trade_cost = np.sum(buy_sell_actions) * cost_per_trade  # Calculate trade cost based on actions
+        # reward = (portfolio_value - self.prev_portfolio_value) - trade_cost
 
         obs = None if done else self._get_observation()
         info = {"portfolio_value": portfolio_value}
